@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 
 #tf.set_random_seed(1337)
-#qnp.random.seed(1337)
+#np.random.seed(1337)
 
 from keras.models import Sequential
 from keras.layers import Dense, Activation, Dropout
@@ -41,8 +41,8 @@ dropout_p=dropout_vec[int(sys.argv[3])-1]
 
 dense_dim1=50 # 10 # 50
 dense_dim2=500 # 20 # 500
-dense_dim3=500 # 500
-dense_dim4=50 # 50
+dense_dim3=500
+dense_dim4=50 # 500
 
 feats_import = pd.read_csv('All_Data_2006_2016.csv', index_col=0)
 
@@ -69,9 +69,14 @@ feats = feats/norm
 ID = np.eye(GD_spread)
 
 X = feats.iloc[:3000].as_matrix()
-y_pre = map(int, label.iloc[:3000].as_matrix())
+X_test = feats.iloc[3001:].as_matrix()
 
+y_pre = map(int, label.iloc[:3000].as_matrix())
 y = np.array([ID[i] for i in y_pre])
+
+y_pre2= map(int, label.iloc[3001:].as_matrix())
+y_test= np.array([ID[i] for i in y_pre2])
+
 
 feats.head()
 
@@ -99,25 +104,32 @@ model.compile(optimizer='adam',
               metrics=['accuracy'])
 
 model.fit(X, y, nb_epoch=nb_epoch, batch_size=batch_size, verbose=False)
-print model.evaluate(X, y, batch_size=10, verbose=False)[1]
 
+print "keras prediction:", model.evaluate(X, y, batch_size=10, verbose=False)[1]
+
+predictions_test = model.predict_proba(X_test)
 predictions = model.predict_proba(X)
 
-# Cross-Tabulation for Away-Win (-1), Draw (0) or Home-win (1)
-performance_df = pd.concat([
-        feats_import.iloc[:3000,-5].apply(min, args=(cutoff_GD,)).apply(max, args=(-cutoff_GD,)),
-        pd.Series(data=map(np.round, map(exp_score, predictions)), name='EXP', index=feats_import.iloc[:3000].index)], axis=1)
-success_res_df = pd.crosstab(performance_df.loc[:, "FTGD"].apply(np.sign), performance_df.loc[:, "EXP"].apply(np.sign))
+def performance_fn(predictions,X,feats_impt,test=''):
 
-HDA_success=round(100* np.trace(success_res_df)/3000.,2)
-print "Success identifying H, D, A is " + str(HDA_success) + " percent"
+	# Cross-Tabulation for Away-Win (-1), Draw (0) or Home-win (1)
+	performance_df = pd.concat([feats_impt.apply(min, args=(cutoff_GD,)).apply(max, args=(-cutoff_GD,)),
+	        					pd.Series(data=map(np.round, map(exp_score, predictions)), name='EXP', index=feats_impt.index)], axis=1) 
+	success_res_df = pd.crosstab(performance_df.loc[:, "FTGD"].apply(np.sign), performance_df.loc[:, "EXP"].apply(np.sign))
+
+	HDA_success=round(100* np.trace(success_res_df)/len(X),2)
+	print test+" success identifying H, D, A is " + str(HDA_success) + " percent"
 
 
-# Cross-Tabulation for exact goal differential
-success_df = pd.crosstab(performance_df.loc[:, "FTGD"], performance_df.loc[:, "EXP"])#, margins=True)
-exp_min = int(performance_df.loc[:, "EXP"].min())
-exp_max = int(performance_df.loc[:, "EXP"].max())
+	# Cross-Tabulation for exact goal differential
+	success_df = pd.crosstab(performance_df.loc[:, "FTGD"], performance_df.loc[:, "EXP"])#, margins=True)
+	exp_min = int(performance_df.loc[:, "EXP"].min())
+	exp_max = int(performance_df.loc[:, "EXP"].max())
 
-GD_success=round(np.sum([100*success_df.ix[i,i] for i in range(exp_min,exp_max+1)])/3000.,2)
-print "Success identifying GD is " + str(GD_success) + " percent"
+	GD_success=round(np.sum([100*success_df.ix[i,i] for i in range(exp_min,exp_max+1)])/len(X),2)
+	print test +" success identifying GD is " + str(GD_success) + " percent"
+
+
+performance_fn(predictions,X,feats_import.iloc[:3000,-5])
+performance_fn(predictions_test,X_test,feats_import.iloc[3001:,-5],test='test')
 
